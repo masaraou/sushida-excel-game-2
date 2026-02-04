@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>🍣 Sushida for Excel（60秒）- Sushida UI</title>
+  <style>
+    :root{
+      --w: 820px;
+      --h: 700px;
+
+      --wood1:#d8ad73;
+      --wood2:#c79356;
+      --frame:#3a240f;
+
+      --tatami:#a9b66a;
+      --table:#e2b36e;
+
+      --panel: rgba(18, 10, 4, 0.78);
+      --panel-border: rgba(255,255,255,0.92);
+
+      --ink:#1b120a;
+    }
+
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      background:#1a1a1a;
+      display:grid;
+      place-items:center;
+      min-height:100vh;
+      font-family: system-ui, -apple-system, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+    }
+
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+
+    .game-frame{
+      width: var(--w);
+      height: var(--h);
+      border: 10px solid var(--frame);
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 12px 26px rgba(0,0,0,0.45);
+      position: relative;
+      background: linear-gradient(180deg, var(--tatami) 0 38%, var(--table) 38% 100%);
+    }
+
+    /* 木目っぽいバー（上/下） */
+    .wood-bar{
+      background:
+        linear-gradient(180deg, var(--wood1), var(--wood2)),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0 6px, rgba(0,0,0,0.02) 6px 12px);
+      border-color: rgba(0,0,0,0.15);
+    }
+
+    /* “画面枠”っぽい四隅の鋲（雰囲気） */
+    .pin{
+      position:absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 30%, #fff, #caa86f 40%, #7a5a2c 100%);
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.4), 0 2px 2px rgba(0,0,0,0.3);
+      z-index: 10;
+    }
+    .pin.tl{ top: 6px; left: 6px; }
+    .pin.tr{ top: 6px; right: 6px; }
+    .pin.bl{ bottom: 6px; left: 6px; }
+    .pin.br{ bottom: 6px; right: 6px; }
+
+    /* ========== TOP ========== */
+    .top-bar{
+      height: 90px;
+      border-bottom: 4px solid rgba(0,0,0,0.15);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding: 0 18px;
+    }
+
+    .time-left{
+      display:flex;
+      align-items:baseline;
+      gap: 10px;
+      color: var(--ink);
+      text-shadow: 0 1px 0 rgba(255,255,255,0.35);
+      user-select:none;
+    }
+    .time-left .time-label{ font-size: 24px; font-weight: 900; }
+    .time-left .time-value{ font-size: 56px; font-weight: 900; letter-spacing: 1px; }
+    .time-left .time-unit{ font-size: 22px; font-weight: 900; }
+
+
+/* 問題（1問）の残り時間：全体タイマーの右側に小さく表示 */
+.qtime{
+  display:inline-flex;
+  align-items:baseline;
+  gap: 6px;
+  margin-left: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.35);
+  border: 1px solid rgba(0,0,0,0.14);
+  color: rgba(27,18,10,0.85);
+  user-select:none;
+}
+.qtime .qtime-label{ font-size: 12px; font-weight: 900; letter-spacing: 0.2px; }
+.qtime .qtime-value{ font-size: 18px; font-weight: 900; min-width: 18px; text-align:right; font-variant-numeric: tabular-nums; }
+.qtime .qtime-unit{ font-size: 12px; font-weight: 900; }
+
+    .top-actions{ display:flex; align-items:center; gap: 10px; }
+
+    .btn{
+      appearance:none;
+      border: 2px solid rgba(0,0,0,0.25);
+      background: linear-gradient(#f2c680, #d59b57);
+      color: #2a1609;
+      font-weight: 900;
+      padding: 10px 16px;
+      border-radius: 10px;
+      box-shadow: 0 3px 0 rgba(0,0,0,0.25);
+      cursor:pointer;
+      user-select:none;
+    }
+    .btn:active{ transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.25); }
+
+    /* ========== STAGE ========== */
+    .stage{
+      height: calc(var(--h) - 90px - 90px);
+      position: relative;
+      padding-top: 26px;
+    }
+
+    /* 机の板っぽい線 */
+    .stage::after{
+      content:"";
+      position:absolute;
+      left:0;
+      right:0;
+      top:38%;
+      bottom:0;
+      pointer-events:none;
+      background:
+        repeating-linear-gradient(
+          90deg,
+          rgba(0,0,0,0.06) 0 2px,
+          rgba(255,255,255,0.04) 2px 120px
+        );
+      mix-blend-mode: multiply;
+      opacity: 0.25;
+    }
+
+    .sushi-area{
+      display:flex;
+      justify-content:center;
+      margin-top: 16px;
+      position: relative;
+      z-index: 1;
+    }
+    .sushi-img{
+      width: 310px;
+      height: auto;
+      filter: drop-shadow(0 10px 12px rgba(0,0,0,0.25));
+      user-select:none;
+    }
+
+    /* 問題エリア：判定（左）＋黒パネル（右） */
+    .prompt-wrap{
+      margin-top: 26px;
+      display:flex;
+      justify-content:center;
+      align-items:stretch;
+      gap: 12px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .judge-box{
+      width: 92px;
+      min-height: 164px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap: 8px;
+      background: rgba(255,255,255,0.55);
+      border: 2px solid rgba(0,0,0,0.18);
+      border-radius: 12px;
+      color: var(--ink);
+      font-weight: 900;
+      user-select:none;
+    }
+    .judge-box .judge-label{ font-size: 16px; opacity: 0.9; }
+    .judge-box .judge-value{ font-size: 18px; text-align:center; padding: 0 6px; }
+
+    .prompt-panel{
+      width: 580px;
+      padding: 14px 22px 14px;
+      background: var(--panel);
+      border: 3px solid var(--panel-border);
+      border-radius: 12px;
+      box-shadow: 0 10px 18px rgba(0,0,0,0.25);
+      text-align:center;
+      position: relative;
+    }
+
+    .meta-row{
+      display:flex;
+      justify-content:space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+      opacity: 0.95;
+      user-select:none;
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 900;
+      color: rgba(255,255,255,0.92);
+      border: 1px solid rgba(255,255,255,0.22);
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .prompt-text{
+      font-size: 32px;
+      font-weight: 900;
+      color: #fff;
+      letter-spacing: 0.5px;
+      line-height: 1.25;
+      margin: 4px 0 0;
+    }
+
+    /* 「進捗」→「ステップ」問題文のすぐ下 */
+    .step-row{
+      margin-top: 10px;
+      font-size: 18px;
+      color: rgba(255,255,255,0.86);
+      display:flex;
+      justify-content:center;
+      gap: 10px;
+      user-select:none;
+    }
+    .step-row .step-label{ font-weight: 900; }
+    .step-row .step-value{ font-weight: 900; }
+
+    .sub-row{
+      margin-top: 10px;
+      display:flex;
+      justify-content:center;
+      gap: 10px;
+      color: rgba(255,255,255,0.82);
+      font-size: 14px;
+      user-select:none;
+    }
+    .sub-row .sub-label{ font-weight: 900; opacity: 0.95; }
+
+    .result-hint{
+      margin-top: 10px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.82);
+      user-select:none;
+    }
+    /* 終了時の結果表示を大きく（正解数/スコアを見やすく） */
+    .result-hint.final{
+      margin-top: 14px;
+      font-size: 20px;
+      color: rgba(255,255,255,0.94);
+      line-height: 1.45;
+    }
+    .final-result{
+      display:flex;
+      flex-direction:column;
+      gap: 6px;
+      align-items:center;
+      justify-content:center;
+    }
+    .final-result .row{
+      font-weight: 900;
+    }
+    .final-result .num{
+      font-size: 30px;
+      font-weight: 900;
+      margin: 0 6px;
+      font-variant-numeric: tabular-nums;
+    }
+    .final-result .yen-inline{
+      font-size: 18px;
+      font-weight: 900;
+      margin-left: 2px;
+    }
+    .final-result .sub{
+      margin-top: 2px;
+      font-size: 14px;
+      opacity: 0.88;
+    }
+
+
+    .hint-mini{
+      margin-top: 8px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.72);
+      user-select:none;
+    }
+
+    .ok{ color: #26d07c; font-weight: 900; }
+    .ng{ color: #ff6b6b; font-weight: 900; }
+
+    /* Escでスキップ：左下 */
+    .hint-skip{
+      position:absolute;
+      left: 14px;
+      bottom: 14px;
+      color: rgba(0,0,0,0.68);
+      font-weight: 900;
+      font-size: 14px;
+      background: rgba(255,255,255,0.35);
+      padding: 6px 10px;
+      border-radius: 10px;
+      user-select:none;
+      z-index: 3;
+    }
+
+    /* ========== SCORE ========== */
+    .score-bar{
+      height: 90px;
+      border-top: 4px solid rgba(0,0,0,0.15);
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      padding: 0 14px;
+      flex-wrap: nowrap;
+    }
+
+    
+/* 「スコア」表記は非表示（メーター自体は残す） */
+.score-title{ display:none; }
+
+/* 合計は強調表示 */
+.score-total{
+  font-weight: 900;
+  color: rgba(27,18,10,0.92);
+  user-select:none;
+  font-size: 26px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;   /* 3桁でも折り返さない */
+  flex: 0 0 auto;        /* なるべく縮められないように */
+  line-height: 1.05;
+}
+.score-total .score-total-label{ margin-right: 8px; }
+.score-total #score{
+  font-size: 34px;
+  margin: 0 4px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.score-total .yen{
+  font-size: 22px;
+  margin-left: 2px;
+}
+
+    .score-meter{
+      display:flex;
+      gap: 6px;           /* メーター同士の距離を縮める */
+      flex: 1;
+      min-width: 0;       /* 右側が詰まるときにレイアウト崩れを抑える */
+      justify-content:flex-start;
+      align-items:center;
+    }
+
+    .coin{
+      min-width: 124px;   /* さらに詰めて、合計が3桁でも折り返しにくく */
+      flex: 0 1 136px;    /* 必要なら少し縮められる */
+      height: 44px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap: 6px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-weight: 900;
+      color: var(--ink);
+      background: rgba(255,255,255,0.55);
+      border: 2px solid rgba(0,0,0,0.16);
+      box-shadow: inset 0 2px 0 rgba(255,255,255,0.35);
+      user-select:none;
+    }
+    .coin .n{ font-variant-numeric: tabular-nums; }
+
+    /* 本家っぽい “輪っか” 感を軽く */
+    .coin::before{
+      content:"";
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      border: 3px solid rgba(0,0,0,0.15);
+      background: rgba(255,255,255,0.85);
+      margin-right: 4px;
+    }
+    .c10::before{ border-color: rgba(0,160,0,0.65); }
+    .c15::before{ border-color: rgba(0,120,200,0.65); }
+    .c20::before{ border-color: rgba(220,0,0,0.65); }
+    .c35::before{ border-color: rgba(120,120,120,0.75); }
+
+    @media (max-width: 900px){
+      .game-frame{ transform: scale(0.9); transform-origin: top center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="game-frame" id="frame">
+    <div class="pin tl"></div><div class="pin tr"></div><div class="pin bl"></div><div class="pin br"></div>
+
+    <header class="top-bar wood-bar">
+      <div class="time-left" aria-label="remaining time">
+        <span class="time-label">残り</span>
+        <span class="time-value" id="remain">60</span>
+        <span class="time-unit">秒</span>
+        <span class="qtime" title="この問題の残り時間">
+          <span class="qtime-label">問</span>
+          <span class="qtime-value" id="qremain">5</span>
+          <span class="qtime-unit">秒</span>
+        </span>
+      </div>
+
+      <div class="top-actions">
+        <button class="btn" id="start">Start</button>
+        <button class="btn" id="reset">Reset</button>
+      </div>
+    </header>
+
+    <main class="stage">
+      <div class="sushi-area">
+        <img
+          class="sushi-img"
+          id="sushiImg"
+          alt="sushi"
+          src="sushi.png"
+          onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg%20xmlns=\'http://www.w3.org/2000/svg\'%20width=\'520\'%20height=\'300\'%3E%3Crect%20width=\'520\'%20height=\'300\'%20rx=\'28\'%20fill=\'%23ffffff\'%20opacity=\'0.75\'/%3E%3Cellipse%20cx=\'260\'%20cy=\'175\'%20rx=\'200\'%20ry=\'70\'%20fill=\'%23f4f4f4\'/%3E%3Cellipse%20cx=\'260\'%20cy=\'175\'%20rx=\'190\'%20ry=\'60\'%20fill=\'%23ffffff\'/%3E%3Crect%20x=\'120\'%20y=\'120\'%20width=\'140\'%20height=\'70\'%20rx=\'35\'%20fill=\'%23ffb6b6\'/%3E%3Crect%20x=\'200\'%20y=\'110\'%20width=\'160\'%20height=\'80\'%20rx=\'40\'%20fill=\'%23ff9f9f\'/%3E%3Crect%20x=\'160\'%20y=\'140\'%20width=\'230\'%20height=\'55\'%20rx=\'28\'%20fill=\'%23ffffff\'/%3E%3Ctext%20x=\'260\'%20y=\'58\'%20text-anchor=\'middle\'%20font-family=\'sans-serif\'%20font-size=\'28\'%20fill=\'%23333\'%3EPUT%20SUSHI.PNG%3C/text%3E%3C/svg%3E';"
+        />
+      </div>
+
+      <section class="prompt-wrap">
+        <div class="judge-box">
+          <div class="judge-label">判定</div>
+          <div class="judge-value" id="res">-</div>
+        </div>
+
+        <div class="prompt-panel">
+          <div class="meta-row">
+            <span class="badge" id="lvl">level: -</span>
+          </div>
+
+          <div class="prompt-text" id="q">Startを押して開始</div>
+
+          <div class="step-row">
+            <span class="step-label">ステップ</span>
+            <span class="step-value mono" id="prog">0/0</span>
+          </div>
+
+          <div class="sub-row">
+            <span class="sub-label">直近入力</span>
+            <span class="mono" id="last">-</span>
+          </div>
+
+          <div class="result-hint" id="resultHint">※時間切れで自動終了します</div>
+</div>
+      </section>
+
+      <div class="hint-skip">Escでスキップ</div>
+    </main>
+
+    <footer class="score-bar wood-bar">
+      <div class="score-title" aria-hidden="true">スコア</div>
+      <div class="score-total"><span class="score-total-label">合計</span><span id="score">0</span><span class="yen">円</span></div>
+
+      <div class="score-meter">
+        <div class="coin c10">10円 ×<span class="n" id="c10">00</span></div>
+        <div class="coin c15">15円 ×<span class="n" id="c15">00</span></div>
+        <div class="coin c20">20円 ×<span class="n" id="c20">00</span></div>
+        <div class="coin c35">35円 ×<span class="n" id="c35">00</span></div>
+      </div>
+    </footer>
+  </div>
+
+<script>
+// =====================
+// ゲームロジック（あなたの既存版を“UIだけ”差し替え）
+// =====================
+const LIMIT_MS = 60_000;
+
+// Excelから反映された問題バンク
+const BANK = [{"level": "easy", "text": "行全体を選択せよ", "steps": ["Shift+Space"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "列全体を選択せよ", "steps": ["Ctrl+Space"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "選択行を削除せよ", "steps": ["Shift+Space", "Ctrl+-"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "選択列を削除せよ", "steps": ["Ctrl+Space", "Ctrl+-"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "1行上に行を追加せよ", "steps": ["Shift+Space", "Ctrl+Shift++"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "セル編集モードに入れ", "steps": ["F2"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "セルの内容をすべて選択せよ（編集時）", "steps": ["Ctrl+A"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "直前の操作を元に戻せ", "steps": ["Ctrl+Z"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "コピーせよ", "steps": ["Ctrl+C"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "貼り付けせよ", "steps": ["Ctrl+V"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "現在行の上に1行追加せよ", "steps": ["Shift+Space", "Ctrl+Shift++"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "現在の選択セルの行を削除せよ", "steps": ["Shift+Space", "Ctrl+-"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "現在の選択セルの列を削除せよ", "steps": ["Ctrl+Space", "Ctrl+-"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "選択範囲を値貼り付けせよ", "steps": ["Ctrl+C", "Ctrl+Alt+V", "V", "Enter"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "表全体を選択せよ", "steps": ["Ctrl+A"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "フィルターをON/OFFせよ", "steps": ["Ctrl+Shift+L"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "オートSUMを入れよ", "steps": ["Shift+Alt+="], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "現在セルの上部のセルを全て選択せよ", "steps": ["Ctrl+Shift+↑"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "現在セルから右端のセルまで全て選択せよ", "steps": ["Ctrl+Shift+→"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "同じ値を下方向にコピーせよ", "steps": ["Ctrl+D"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "現在のセルの行全体を非表示にせよ", "steps": ["Shift+Space", "Ctrl+9"], "score": 35, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "表全体にフィルターを設定せよ", "steps": ["Ctrl+A", "Ctrl+Shift+L"], "score": 35, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "現在列でフィルター条件を開け", "steps": ["Alt+↓"], "score": 35, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "セルの表示形式を数値にせよ", "steps": ["Ctrl+1", "N", "Enter"], "score": 35, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "列幅を自動調整せよ", "steps": ["Ctrl+Space", "Alt+H", "O", "I"], "score": 35, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "行の高さを自動調整せよ", "steps": ["Shift+Space", "Alt+H", "O", "A"], "score": 35, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "現在セルを含む表全体をコピーせよ", "steps": ["Ctrl+A", "Ctrl+C"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "ブックを保存せよ", "steps": ["Ctrl+S"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "新しいシートを追加せよ", "steps": ["Shift+F11"], "score": 15, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "今日の日付を入力せよ", "steps": ["Ctrl+;"], "score": 15, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "直前の操作のやり直し、繰り返し", "steps": ["Ctrl+y"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "mid", "text": "左隣のセルと同じ値をコピーせよ", "steps": ["Ctrl+R"], "score": 20, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "現在のセルの列全体を非表示にせよ", "steps": ["Ctrl+Space", "Ctrl+0"], "score": 35, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "名前を付けて保存せよ", "steps": ["F12"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "直前の操作と同じ操作の繰り返しをせよ", "steps": ["F4"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "値の検索をせよ", "steps": ["Ctrl+F"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "easy", "text": "値の置換をせよ", "steps": ["Ctrl+H"], "score": 10, "altSteps": [], "timeLimitSec": 5.0}, {"level": "hard", "text": "セルの塗りつぶしを無しにせよ", "steps": ["alt", "H", "H", "N"], "score": 35, "altSteps": [], "timeLimitSec": 5.0}];
+
+const $ = (id) => document.getElementById(id);
+
+let queue = [];
+let current = null;
+let stepIdx = 0;
+
+let startedAt = null;
+let timerId = null;
+let endTimerId = null;
+
+let qTimerId = null;
+let qRevealId = null;
+let qDeadlineAt = null; // 1問タイマーの締切(表示用)
+
+let score = 0;
+let solved = 0;
+
+// 10/15/20/35メーター用
+const coinCounts = {10:0, 15:0, 20:0, 35:0};
+
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+function defaultLevelScore(lvl){
+  if (lvl === "easy") return 10;
+  if (lvl === "mid") return 20;
+  return 35;
+}
+
+function pointsFor(q){
+  if (typeof q.score === "number" && Number.isFinite(q.score)) return q.score;
+  return defaultLevelScore(q.level);
+}
+
+function pad2(n){
+  return String(n).padStart(2, "0");
+}
+
+function setUI(){
+  $("score").textContent = score;
+  $("c10").textContent = pad2(coinCounts[10]);
+  $("c15").textContent = pad2(coinCounts[15]);
+  $("c20").textContent = pad2(coinCounts[20]);
+  $("c35").textContent = pad2(coinCounts[35]);
+}
+
+function updateRemain(){
+  const elapsed = performance.now() - startedAt;
+  const remain = Math.max(0, LIMIT_MS - elapsed);
+  const remainSec = Math.ceil(remain / 1000);
+  $("remain").textContent = String(remainSec);
+
+  updateQuestionRemain();
+
+  if (remain <= 0) finish();
+}
+
+function updateQuestionRemain(){
+  const el = $("qremain");
+  if (!el) return;
+
+  if (!startedAt) {
+    el.textContent = "5";
+    return;
+  }
+  if (!qDeadlineAt) {
+    el.textContent = "0";
+    return;
+  }
+
+  const ms = Math.max(0, qDeadlineAt - performance.now());
+  const sec = Math.ceil(ms / 1000);
+  el.textContent = String(sec);
+}
+
+
+function clearQuestionTimers(){
+  if (qTimerId) clearTimeout(qTimerId);
+  if (qRevealId) clearTimeout(qRevealId);
+  qTimerId = null;
+  qRevealId = null;
+  qDeadlineAt = null;
+  const el = $("qremain");
+  if (el) el.textContent = "0";
+}
+
+function questionLimitMs(q){
+  // 1問あたりの制限時間は常に5秒
+  return 5_000;
+}
+
+function formatAnswer(q){
+  try { return (q && Array.isArray(q.steps)) ? q.steps.join(" → ") : ""; }
+  catch(e){ return ""; }
+}
+
+function onQuestionTimeout(timedOut){
+  if (!startedAt) return; // game ended
+  // 入力を止める（timeout中にキー入力が入らないように）
+  const ref = timedOut;
+  current = null;
+  stepIdx = 0;
+
+  // 大きい問題文の場所に “答え” を出して見やすくする
+  const ans = formatAnswer(ref);
+  $("q").textContent = ans ? `答え：${ans}` : "答え：-";
+
+  $("last").textContent = "-";
+  $("res").innerHTML = `<span class="ng">時間切れ</span>`;
+  $("resultHint").classList.remove("final");
+  $("resultHint").textContent = "答え表示中…";
+
+  // 少し見せてから次へ（表示は0.9秒）
+  qRevealId = setTimeout(() => {
+    if (!startedAt) return;
+    $("resultHint").classList.remove("final");
+  $("resultHint").textContent = "入力中…（1問5秒）";
+    loadNext();
+  }, 900);
+}
+
+function armQuestionTimer(q){
+  clearQuestionTimers();
+  const ms = questionLimitMs(q);
+  const ref = q;
+
+  qDeadlineAt = performance.now() + ms;
+  updateQuestionRemain();
+
+  qTimerId = setTimeout(() => {
+    if (!startedAt) return;
+    if (current !== ref) return; // すでに次の問題に移っていたら無視
+    clearQuestionTimers();
+    onQuestionTimeout(ref);
+  }, ms);
+}
+
+function normComboFromEvent(e){
+  if (e.key === "Escape") return "Esc";
+  if (e.key === "Enter") return "Enter";
+
+  const parts = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.altKey) parts.push("Alt");
+  if (e.metaKey) parts.push("Meta");
+
+  let k = e.key;
+
+  // 修飾キー単体（Altだけはステップとして扱えるようにする）
+  // 例：Alt → H → H → N のようなリボン操作を練習できるようにする
+  if (k === "Alt" && !e.ctrlKey && !e.shiftKey && !e.metaKey) return "Alt";
+  if (k === "Control" || k === "Shift" || k === "Meta") return null;
+  if (k === "Alt") return null;
+
+  if (k === " ") k = "Space";
+  if (k === "Subtract") k = "-";
+  if (k === "Add") k = "+";
+
+  if (k === "ArrowUp") k = "↑";
+  if (k === "ArrowDown") k = "↓";
+  if (k === "ArrowLeft") k = "←";
+  if (k === "ArrowRight") k = "→";
+
+  if (k.length === 1) k = k.toUpperCase();
+
+  parts.push(k);
+  return parts.join("+");
+}
+
+
+function comboEquals(inputCombo, expectedCombo){
+  const a = String(inputCombo ?? "").toLowerCase();
+  const b = String(expectedCombo ?? "").toLowerCase();
+  if (a === b) return true;
+
+  // 例：Shift+Alt+=（表記）と Shift+Alt++（keydownの実際のkeyが'+'になる）を同一視
+  // a/b の末尾が "+=" のとき、末尾を "+" に置換したパターンも許可する
+  if (b.endsWith("+=")) {
+    const b2 = b.slice(0, -1) + "+";
+    if (a === b2) return true;
+  }
+  if (a.endsWith("+=")) {
+    const a2 = a.slice(0, -1) + "+";
+    if (a2 === b) return true;
+  }
+  return false;
+}
+
+function loadNext(){
+  if (!startedAt) return;
+  clearQuestionTimers();
+  $("resultHint").classList.remove("final");
+  $("resultHint").textContent = "入力中…（1問5秒）";
+
+  if (BANK.length === 0) {
+    $("q").textContent = "問題が0件です（EnabledやStepsを確認してください）";
+    return;
+  }
+
+  if (queue.length === 0) queue = shuffle(BANK); // 60秒なので無限ループでOK
+
+  current = queue.shift();
+  stepIdx = 0;
+
+  $("q").textContent = current.text;
+  $("lvl").textContent = `level: ${current.level}`;
+  $("prog").textContent = `0/${current.steps.length}`;
+  $("res").textContent = "-";
+  $("last").textContent = "-";
+
+  armQuestionTimer(current);
+}
+
+function start(){
+  reset(false);
+  try { document.activeElement && document.activeElement.blur(); } catch(e){}
+
+  queue = shuffle(BANK);
+  score = 0;
+  solved = 0;
+  coinCounts[10]=0; coinCounts[15]=0; coinCounts[20]=0; coinCounts[35]=0;
+
+  startedAt = performance.now();
+
+  $("resultHint").classList.remove("final");
+  $("resultHint").textContent = "入力開始…（60秒） / 1問5秒";
+  setUI();
+
+  if (timerId) clearInterval(timerId);
+  timerId = setInterval(updateRemain, 50);
+
+  if (endTimerId) clearTimeout(endTimerId);
+  endTimerId = setTimeout(finish, LIMIT_MS + 20);
+
+  loadNext();
+}
+
+function finish(){
+  if (!startedAt) return;
+  const elapsed = performance.now() - startedAt;
+
+  startedAt = null;
+  if (timerId) clearInterval(timerId);
+  if (endTimerId) clearTimeout(endTimerId);
+  timerId = null;
+  endTimerId = null;
+  clearQuestionTimers();
+
+  $("remain").textContent = "0";
+  $("lvl").textContent = "level: -";
+  $("q").textContent = "⏰ 時間切れ！";
+  $("prog").textContent = "-";
+  $("res").innerHTML = `<span class="ok">終了</span>`;
+  $("last").textContent = "-";
+
+  const rh = $("resultHint");
+  rh.classList.add("final");
+  rh.innerHTML =
+    `<div class="final-result">`
+    + `<div class="row">正解数 <span class="num mono">${solved}</span></div>`
+    + `<div class="row">スコア <span class="num mono">${score}</span><span class="yen-inline">円</span></div>`
+    + `<div class="sub">プレイ時間 <span class="mono">${Math.round(elapsed/1000)}s</span></div>`
+    + `</div>`;
+}
+
+function reset(resetRemain=true){
+  current = null;
+  stepIdx = 0;
+  queue = [];
+
+  startedAt = null;
+  if (timerId) clearInterval(timerId);
+  if (endTimerId) clearTimeout(endTimerId);
+  timerId = null;
+  endTimerId = null;
+  clearQuestionTimers();
+
+  score = 0;
+  solved = 0;
+  coinCounts[10]=0; coinCounts[15]=0; coinCounts[20]=0; coinCounts[35]=0;
+
+  $("q").textContent = "Startを押して開始";
+  $("lvl").textContent = "level: -";
+  $("prog").textContent = "0/0";
+  $("res").textContent = "-";
+  $("last").textContent = "-";
+  $("resultHint").classList.remove("final");
+  $("resultHint").textContent = "※時間切れで自動終了します（1問5秒で答え表示）";
+  setUI();
+  if (resetRemain) $("remain").textContent = "60";
+  updateQuestionRemain(); // 未開始時は「5」を表示
+}
+
+$("start").addEventListener("click", start);
+$("reset").addEventListener("click", () => reset(true));
+
+window.addEventListener("keydown", (e) => {
+  if (!startedAt || !current) return;
+
+  const block = (e.key === " " || (typeof e.key === "string" && e.key.startsWith("Arrow")) || e.ctrlKey || e.altKey || e.metaKey);
+  if (block) e.preventDefault();
+
+  const combo = normComboFromEvent(e);
+  if (!combo) return;
+
+  if (combo === "Esc") {
+    $("res").innerHTML = `<span class="ng">スキップ</span>`;
+    loadNext();
+    return;
+  }
+
+  $("last").textContent = combo;
+
+  const expected = current.steps[stepIdx];
+
+  if (comboEquals(combo, expected)) {
+    stepIdx++;
+    $("prog").textContent = `${stepIdx}/${current.steps.length}`;
+
+    if (stepIdx === current.steps.length) {
+      const add = pointsFor(current);
+      score += add;
+      solved++;
+      if (coinCounts[add] != null) coinCounts[add] += 1;
+      setUI();
+      $("res").innerHTML = `🍣 <span class="ok">正解！</span> +${add}`;
+      clearQuestionTimers();
+      setTimeout(loadNext, 200);
+    } else {
+      $("res").innerHTML = `<span class="ok">OK</span>`;
+    }
+  } else {
+    $("res").innerHTML = `<span class="ng">違う</span>`;
+  }
+});
+
+reset();
+</script>
+</body>
+</html>
